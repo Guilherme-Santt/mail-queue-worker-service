@@ -10,28 +10,20 @@ export function setupEmailWorker() {
     worker = new Worker(
         EMAIL_QUEUE_NAME,
         async (job) => {
-            console.log(`[Worker] Processando job ${job.id} (${job.name})...`);
-
-            await jobsRepo.updateStatus(job.id, {
-                status: 'PROCESSING'
-            });
-
-            await new Promise((resolve) => setTimeout(resolve, 3000));
-
+            console.log(`[Worker] Tentativa ${job.attemptsMade + 1} para o Job ${job.id}`);
+    
+            await jobsRepo.updateStatus(job.id, { status: 'PROCESSING' });
+    
             if (job.data.to === 'erro@exemplo.com') {
-                throw new Error('Servidor de e-mail rejeitou o destinatário.');
+            throw new Error('Falha simulada no provedor de e-mail.');
             }
-
-            console.log(`[Worker] E-mail enviado com sucesso para: ${job.data.to}`);
-
-            return { sentAt: new Date().toISOString(), messageId: `msg-${Date.now()}` };
+    
+            return { sentAt: new Date().toISOString() };
         },
         { connection: redisConfig }
     );
 
     worker.on('completed', async (job, returnvalue) => {
-        console.log(`[Worker] Job ${job.id} concluído com sucesso!`);
-
         await jobsRepo.updateStatus(job.id, {
             status: 'COMPLETED',
             result: returnvalue
@@ -39,16 +31,28 @@ export function setupEmailWorker() {
     });
 
     worker.on('failed', async (job, err) => {
-        console.error(`[Worker] Job ${job?.id} falhou: ${err.message}`);
-        
-        if (job) {
+        console.error(`[Worker] Job ${job.id} falhou na tentativa ${job.attemptsMade}: ${err.message}`);
+    
+        const maxAttempts = job.opts.attempts || 1;
+        const hasMoreAttempts = job.attemptsMade < maxAttempts;
+    
+        if (!hasMoreAttempts) {
+            console.warn(`[DLQ] Job ${job.id} esgotou todas as tentativas. Mover para a Dead Letter Queue...`);
+    
+            await emailDLQ.add('dead-email', {
+            originalJobId: job.id,
+            payload: job.data,
+            failedReason: err.message,
+            failedAt: new Date().toISOString()
+            });
+    
             await jobsRepo.updateStatus(job.id, {
-                status: 'FAILED',
-                errorMessage: err.message
+            status: 'FAILED',
+            errorMessage: `[DLQ] Esgotado após ${maxAttempts} tentativas. Erro: ${err.message}`
             });
         }
     });
-
+    
     return worker;
 }
 

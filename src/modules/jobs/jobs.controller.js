@@ -49,4 +49,31 @@ export class JobsController {
             return res.status(500).json({ error: 'Erro ao listar jobs.' });
         }
     }
+
+    async retryDeadJobs(req, res) {
+        try {
+            const deadJobs = await emailDLQ.getJobs(['completed', 'waiting', 'delayed', 'failed']);
+    
+            if (deadJobs.length === 0) {
+                return res.json({ message: 'Nenhum job na Dead Letter Queue para reprocessar.' });
+            }
+        
+            let reprocessedCount = 0;
+        
+            for (const deadJob of deadJobs) {
+                const { payload } = deadJob.data;
+        
+                await emailQueue.add('send-email', payload);
+        
+                await deadJob.remove();
+                reprocessedCount++;
+            }
+    
+            return res.json({
+                message: `${reprocessedCount} jobs movidos da DLQ de volta para a fila principal.`
+            });
+        } catch (error) {
+            return res.status(500).json({ error: 'Erro ao reprocessar DLQ.' });
+        }
+    }
 }
