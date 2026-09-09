@@ -5,6 +5,7 @@
     "main": "src/server.js",
     "type": "module",
     "scripts": {
+        "dev": "node --watch src/index.js",
         "start:api": "node src/server.js",
         "start:worker": "node src/worker.js",
         "dev:api": "node --watch src/server.js",
