@@ -4,9 +4,10 @@ import { EMAIL_QUEUE_NAME } from '../queues/email-queue.js';
 import { JobsRepository } from '../../modules/jobs/jobs.repository.js';
 
 const jobsRepo = new JobsRepository();
+let worker = null;
 
 export function setupEmailWorker() {
-    const worker = new Worker(
+    worker = new Worker(
         EMAIL_QUEUE_NAME,
         async (job) => {
             console.log(`[Worker] Processando job ${job.id} (${job.name})...`);
@@ -49,4 +50,12 @@ export function setupEmailWorker() {
     });
 
     return worker;
+}
+
+export async function stopEmailWorker() {
+    if (worker) {
+        console.log('[Worker] Pausando recebimento de novos jobs e aguardando os atuais...');
+        await worker.close();
+        console.log('[Worker] Worker do BullMQ encerrado com sucesso.');
+    }
 }
